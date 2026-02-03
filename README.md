@@ -1,15 +1,6 @@
-# copy-party-search
+Simple discord app to search through your copyparty library
 
-To install dependencies:
+To run make sure you have bun installed.
 
-```bash
-bun install
-```
-
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.3.7. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+Then bun install and bun index.ts
+To setup the app copy .env.example to .env. And setup a new app on discord developer portal. Put in your token, client id, guild id or server id and copy party url. If you require a password you cna use the password env.
