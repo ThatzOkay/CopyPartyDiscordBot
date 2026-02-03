@@ -1,0 +1,21 @@
+{
+  "name": "copy-party-search",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun run index",
+    "deploy-command": "bun run deploy-commands"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "eslint": "^9.39.2",
+    "jiti": "^2.6.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "discord.js": "^14.25.1"
+  }
+}
