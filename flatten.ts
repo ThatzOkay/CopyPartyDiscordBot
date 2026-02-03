@@ -1,0 +1,82 @@
+import type { FileNode } from "./file-node";
+
+export type FuseItem = {
+  lead: string;
+  href: string;
+  fullHref: string;
+  ext: string;
+  sz: number;
+  ts: number;
+  tags: string[];
+  params: string;
+  type: "file" | "dir";
+  path: string;
+};
+
+const ensureTrailingSlash = (s: string): string =>
+  s?.endsWith("/") ? s : `${s}/`;
+
+const joinHref = (parentHref: string, childHref: string): string => {
+  if (!parentHref) return childHref ?? "";
+  if (!childHref) return parentHref;
+  const normalizedParent = parentHref.endsWith("/")
+    ? parentHref
+    : `${parentHref}/`;
+  const normalizedChild = childHref.startsWith("/")
+    ? childHref.slice(1)
+    : childHref;
+  return `${normalizedParent}${normalizedChild}`;
+};
+
+export const flatten = (
+  nodes: FileNode[],
+  options?: { includeDirs?: boolean },
+): FuseItem[] => {
+  const includeDirs = options?.includeDirs ?? true;
+  const copyPartyUrl = (process.env.COPY_PARTY_URL ?? "").replace(/\/$/, ""); // no trailing slash
+  const copyPartyPrefix = copyPartyUrl ? `${copyPartyUrl}/music/` : "";
+
+  const walk = (list: FileNode[], parentRelativeHref = ""): FuseItem[] => {
+    return list.flatMap((node) => {
+      const joinedRelative = joinHref(parentRelativeHref, node.href);
+      const relativeHref =
+        node.type === "dir"
+          ? ensureTrailingSlash(joinedRelative)
+          : joinedRelative;
+
+      const fullHref = copyPartyPrefix
+        ? `${copyPartyPrefix}${relativeHref}`
+        : relativeHref;
+
+      const leadForCopyparty =
+        node.type === "dir"
+          ? `${fullHref}?zip=crc`
+          : node.lead;
+
+      const item: FuseItem = {
+        lead: leadForCopyparty,
+        href: node.href,
+        fullHref,
+        ext: node.ext,
+        sz: node.sz,
+        ts: node.ts,
+        tags: node.tags ?? [],
+        params: node.params,
+        type: node.type,
+        path: fullHref,
+      };
+
+      const childrenFlattened = node.children
+        ? walk(node.children, relativeHref)
+        : [];
+
+      if (node.type === "dir") {
+        return includeDirs ? [item, ...childrenFlattened] : childrenFlattened;
+      }
+
+      return [item, ...childrenFlattened];
+    });
+  };
+
+  return walk(nodes, "");
+};
