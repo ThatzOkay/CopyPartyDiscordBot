@@ -93,11 +93,11 @@ const fetchRecursive = async (
 
     node.children = children;
 
-    for (const child of children) {
-      if (child.type === "dir") {
-        await fetchRecursive(child, `${nextPath}`);
-      }
-    }
+    const dirChilds = children.filter((child) => child.type === "dir");
+    const dirChildTasks = dirChilds.map((child) =>
+      fetchRecursive(child, `${nextPath}`),
+    );
+    await Promise.all(dirChildTasks);
   } catch (err) {
     console.error(`Error parsing JSON for ${nextPath}:`, err);
     await fetchRecursive(node, previousPath);
@@ -138,14 +138,14 @@ for (const folder of commandFolders) {
   }
 }
 
-const handleSelectInteraction = async (interaction: StringSelectMenuInteraction<CacheType>) => {
+const handleSelectInteraction = async (
+  interaction: StringSelectMenuInteraction<CacheType>,
+) => {
   await interaction.deferUpdate();
   const parsed = JSON.parse(interaction.values[0]!);
   const index = Number(parsed.i);
 
-  const matches = fuse?.search(
-    parsed.query,
-  );
+  const matches = fuse?.search(parsed.query);
 
   if (!matches || index < 0 || index >= matches.length || !matches[index]) {
     await interaction.update({
@@ -229,21 +229,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+const loadFilesArray = () => {
+  const jsonData = fs.readFileSync("file-tree.json", "utf-8");
+
+    const parsedData: FuseItem[] = JSON.parse(jsonData);
+    for (let i = 0; i < parsedData.length; i += 10_000) {
+      fileList.push(...parsedData.slice(i, i + 10_000));
+    }
+    fuse = new Fuse(fileList, {
+      keys: ["lead", "tags", "href", "fullHref"],
+      threshold: 0.3,
+    });
+    console.log(`File tree created with ${fileList.length} items.`);
+}
+
+const exists = fs.existsSync("file-tree.json");
+if (exists) {
+  loadFilesArray();
+} else {
 createFileTree()
   .then((files) => {
     const flattened = flatten(files);
 
     fs.writeFileSync("file-tree.json", JSON.stringify(flattened));
 
-    const jsonData = fs.readFileSync("file-tree.json", "utf-8");
-    const parsedData: FuseItem[] = JSON.parse(jsonData);
-    fileList.push(...parsedData);
-    fuse = new Fuse(fileList, {
-      keys: ["lead", "tags", "href", "fullHref"],
-      threshold: 0.3,
-    });
-    console.log(`File tree created with ${fileList.length} items.`);
-
+    loadFilesArray();
     //Example working search:
     // const testPattern = "Rosellia";
     // const results = fuse.search(testPattern);
@@ -252,5 +262,6 @@ createFileTree()
   .catch((err) => {
     console.error("Error creating file tree:", err);
   });
+}
 
 client.login(token);
