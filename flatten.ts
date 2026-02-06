@@ -51,9 +51,7 @@ export const flatten = (
         : relativeHref;
 
       const leadForCopyparty =
-        node.type === "dir"
-          ? `${fullHref}?zip=crc`
-          : node.lead;
+        node.type === "dir" ? `${fullHref}?zip=crc` : node.lead;
 
       const item: MeiliFileDoc = {
         id: hash("sha256", fullHref),
@@ -63,7 +61,15 @@ export const flatten = (
         ext: node.ext,
         sz: node.sz,
         ts: node.ts,
-        tags: node.tags ?? [],
+        tags: Array.isArray(node.tags)
+          ? node.tags.map((tag) => {
+              const key = Object.keys(tag)[0];
+              const value = Object.values(tag)[0];
+              return `${key}:${value}`;
+            })
+          : Object.entries(node.tags || {}).map(
+              ([key, value]) => `${key}:${value}`,
+            ),
         params: node.params,
         type: node.type,
         path: fullHref,

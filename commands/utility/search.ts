@@ -1,9 +1,10 @@
 import {
   ActionRowBuilder,
+  InteractionResponse,
   SlashCommandBuilder,
   StringSelectMenuBuilder,
 } from "discord.js";
-import { index } from "../..";
+import { currentSearches, discordClient, index } from "../..";
 
 export default {
   data: new SlashCommandBuilder()
@@ -17,9 +18,26 @@ export default {
         .setRequired(true),
     ),
   async execute(interaction: any) {
+    const previousSearchInteraction = currentSearches.findIndex(
+      (s) => s.userId === interaction.user.id,
+    );
+
+    if (previousSearchInteraction !== -1) {
+      const previousSearch = currentSearches[previousSearchInteraction];
+
+      if (previousSearch?.selectReply) {
+        previousSearch.selectReply.delete().catch(() => {});
+      }
+
+      currentSearches.splice(previousSearchInteraction, 1);
+    }
+
     const query = interaction.options.getString("query")!;
 
-    const matches = await index.search(query) ?? [];
+    const matches =
+      (await index.search(query, {
+        limit: 50,
+      })) ?? [];
 
     if (matches.hits.length === 0) {
       await interaction.reply({
@@ -45,10 +63,19 @@ export default {
       menu,
     );
 
-    await interaction.reply({
+    const reply = (await interaction.reply({
       content: `Found ${matches.hits.length} results. Showing top ${results.length}.`,
       components: [row],
       flags: "Ephemeral",
+    })) as InteractionResponse;
+
+    const userId = interaction.user.id;
+
+    currentSearches.push({
+      query,
+      selectReply: reply,
+      userId,
+      selectInteraction: interaction,
     });
   },
 };

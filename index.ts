@@ -7,19 +7,28 @@ import {
   CommandInteraction,
   Events,
   GatewayIntentBits,
+  InteractionResponse,
+  Message,
   MessageFlags,
-  messageLink,
   StringSelectMenuInteraction,
   type CacheType,
 } from "discord.js";
-import { readdir } from "node:fs/promises";
-import path from "node:path";
-import fs from "node:fs";
 import type { FileNode } from "./file-node";
 import { flatten, type MeiliFileDoc } from "./flatten";
-import Fuse from "fuse.js";
 import search from "./commands/utility/search";
 import { MeiliSearch } from "meilisearch";
+
+console.log("Starting up...");
+
+export type CurrentSearch = {
+  query: string;
+  selectReply: InteractionResponse;
+  selectInteraction: StringSelectMenuInteraction<CacheType>;
+  userId: string;
+  replyInteraction?: Message<boolean>;
+};
+
+export const currentSearches: CurrentSearch[] = [];
 
 export const fileList: MeiliFileDoc[] = [];
 
@@ -129,9 +138,11 @@ const token = process.env.DISCORD_TOKEN;
 if (!token) {
   throw new Error("DISCORD_TOKEN is not defined in environment variables.");
 }
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+export const discordClient = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
 
-client.once(Events.ClientReady, (readyClient) => {
+discordClient.once(Events.ClientReady, (readyClient) => {
   console.log(`Ready! Logged in as ${readyClient.user.tag}`);
 });
 
@@ -145,19 +156,23 @@ const handleSelectInteraction = async (
   const parsed = JSON.parse(interaction.values[0]!);
   const selectIndex = Number(parsed.i);
 
-  const matches = await index.search(parsed.query) ?? [];
+  const matches =
+    (await index.search(parsed.query, {
+      limit: 50,
+    })) ?? [];
 
-  if (!matches || selectIndex < 0 || selectIndex >= matches.hits.length || !matches.hits[selectIndex]) {
+  if (
+    !matches ||
+    selectIndex < 0 ||
+    selectIndex >= matches.hits.length ||
+    !matches.hits[selectIndex]
+  ) {
     await interaction.followUp({
       content: "Invalid selection.",
       components: [],
     });
     return;
   }
-
-  console.log(`User selected index ${selectIndex} for query "${parsed.query}"`);
-
-  console.log("Search result count:", matches.hits.length);
 
   const item = matches.hits.find((_, index) => index === selectIndex);
 
@@ -184,29 +199,80 @@ const handleSelectInteraction = async (
       .setURL(downloadUrl),
   );
 
-  if (item.ext === "jpg" || item.ext === "png" || item.ext === "gif") {
+  const previousSearchInteractionIndex = currentSearches.findIndex(
+    (s) => s.userId === interaction.user.id,
+  );
+
+  if (previousSearchInteractionIndex === -1) {
+    console.warn(
+      `No previous search interaction found for user ${interaction.user.id}`,
+    );
+
     await interaction.followUp({
-      content: `Selected **${decodeURIComponent(item.href)}**\n${item.fullHref}`,
-      components: [row],
-      embeds: [
-        {
-          image: {
-            url: item.fullHref,
+      content: `Previous search interaction not found.`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const previousSearch = currentSearches[previousSearchInteractionIndex];
+
+  if (previousSearch && !previousSearch.replyInteraction) {
+    let followUp: Message<boolean>;
+    if (item.ext === "jpg" || item.ext === "png" || item.ext === "gif") {
+      followUp = await interaction.followUp({
+        content: `Selected **${decodeURIComponent(item.href)}**\n${item.fullHref}`,
+        components: [row],
+        embeds: [
+          {
+            image: {
+              url: item.fullHref,
+            },
           },
-        },
-      ],
-      flags: MessageFlags.Ephemeral,
-    });
-  } else {
-    await interaction.followUp({
-      content: `Selected **${decodeURIComponent(item.href)}**`,
-      components: [row],
-      flags: MessageFlags.Ephemeral,
-    });
+        ],
+        flags: MessageFlags.Ephemeral,
+      });
+    } else {
+      followUp = await interaction.followUp({
+        content: `Selected **${decodeURIComponent(item.href)}**`,
+        components: [row],
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    previousSearch!.replyInteraction = followUp;
+    previousSearch!.selectInteraction = interaction;
+    return;
+  }
+
+  if (previousSearch && previousSearch.replyInteraction) {
+    // Fetch the message to ensure channel is cached
+    let selectFollowup = previousSearch.replyInteraction;
+    const selectReply = previousSearch.selectInteraction;
+
+    if (item.ext === "jpg" || item.ext === "png" || item.ext === "gif") {
+      await selectReply.editReply({
+        content: `Selected **${decodeURIComponent(item.href)}**\n${item.fullHref}`,
+        components: [row],
+        embeds: [
+          {
+            image: {
+              url: item.fullHref,
+            },
+          },
+        ],
+        message: selectFollowup,
+      });
+    } else {
+      await selectReply.editReply({
+        content: `Selected **${decodeURIComponent(item.href)}**`,
+        components: [row],
+        message: selectFollowup,
+      });
+    }
   }
 };
 
-client.on(Events.InteractionCreate, async (interaction) => {
+discordClient.on(Events.InteractionCreate, async (interaction) => {
   if (
     interaction.isStringSelectMenu() &&
     interaction.customId === "search_select"
@@ -243,37 +309,50 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
 const rawInfo = await index.getRawInfo().catch(() => undefined);
 const stats = await index.getStats().catch(() => undefined);
-const exists = rawInfo?.createdAt !== undefined 
-               && stats?.numberOfDocuments !== undefined 
-               && stats.numberOfDocuments > 0 
-               && process.env.FORCE_REINDEX !== "true";
+const exists =
+  rawInfo?.createdAt !== undefined &&
+  stats?.numberOfDocuments !== undefined &&
+  stats.numberOfDocuments > 0 &&
+  process.env.FORCE_REINDEX !== "true";
 if (!exists) {
-createFileTree()
-  .then(async (files) => {
+  await index.deleteAllDocuments().catch(() => undefined);
 
+  createFileTree()
+    .then(async (files) => {
       const flattened = flatten(files);
 
-      console.log(
-        `Flattened file tree contains ${flattened.length} items.`
-      );
+      console.log(`Flattened file tree contains ${flattened.length} items.`);
       console.log("Adding documents to Meilisearch index...");
 
       for (let i = 0; i < flattened.length; i += BATCH_SIZE) {
         const batch = flattened.slice(i, i + BATCH_SIZE);
 
         console.log(
-          `Uploading ${i} → ${i + batch.length} / ${flattened.length}`
+          `Uploading ${i} → ${i + batch.length} / ${flattened.length}`,
         );
 
         const task = await index.addDocuments(batch);
         await waitForTask(task.taskUid);
       }
 
+      await index.updateSearchableAttributes([
+        "lead",
+        "href",
+        "fullHref",
+        "ext",
+        "sz",
+        "ts",
+        "tags",
+        "params",
+        "type",
+        "path",
+      ]);
+
       console.log("Indexing complete.");
-  })
-  .catch((err) => {
-    console.error("Error creating file tree:", err);
-  });
+    })
+    .catch((err) => {
+      console.error("Error creating file tree:", err);
+    });
 }
 
-client.login(token);
+discordClient.login(token);

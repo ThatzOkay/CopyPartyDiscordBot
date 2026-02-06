@@ -1,0 +1,21 @@
+services:
+  searcher:
+    image: thatzokay/copy-party-search:latest
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - GUILD_ID=${GUILD_ID}
+      - COPY_PARTY_URL=${COPY_PARTY_URL}
+      - COPY_PARTY_PASSWORD=${COPY_PARTY_PASSWORD}
+      - MEILISEARCH_HOST=${MEILISEARCH_HOST}
+      - MEILISEARCH_API_KEY=${MEILISEARCH_API_KEY}
+      - FORCE_REINDEX=${FORCE_REINDEX}
+  meilisearch:
+    image: getmeili/meilisearch:v1.35.0
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: "${MEILISEARCH_API_KEY}"
+    volumes:
+      - meili_data:/meili_data 
+volumes:
+  meili_data:
