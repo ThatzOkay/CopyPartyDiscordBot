@@ -1,6 +1,8 @@
+import { hash } from "node:crypto";
 import type { FileNode } from "./file-node";
 
-export type FuseItem = {
+export type MeiliFileDoc = {
+  id: string;
   lead: string;
   href: string;
   fullHref: string;
@@ -31,12 +33,12 @@ const joinHref = (parentHref: string, childHref: string): string => {
 export const flatten = (
   nodes: FileNode[],
   options?: { includeDirs?: boolean },
-): FuseItem[] => {
+): MeiliFileDoc[] => {
   const includeDirs = options?.includeDirs ?? true;
   const copyPartyUrl = (process.env.COPY_PARTY_URL ?? "").replace(/\/$/, ""); // no trailing slash
   const copyPartyPrefix = copyPartyUrl ? `${copyPartyUrl}/music/` : "";
 
-  const walk = (list: FileNode[], parentRelativeHref = ""): FuseItem[] => {
+  const walk = (list: FileNode[], parentRelativeHref = ""): MeiliFileDoc[] => {
     return list.flatMap((node) => {
       const joinedRelative = joinHref(parentRelativeHref, node.href);
       const relativeHref =
@@ -53,7 +55,8 @@ export const flatten = (
           ? `${fullHref}?zip=crc`
           : node.lead;
 
-      const item: FuseItem = {
+      const item: MeiliFileDoc = {
+        id: hash("sha256", fullHref),
         lead: leadForCopyparty,
         href: node.href,
         fullHref,

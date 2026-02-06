@@ -2,10 +2,14 @@
   "name": "copy-party-search",
   "module": "index.ts",
   "type": "module",
+  "target": "bun",
   "private": true,
+  "main": "index.ts",
+  "source": "index.ts",
   "scripts": {
     "dev": "bun run index",
-    "deploy-command": "bun run deploy-commands"
+    "deploy-command": "bun run deploy-commands",
+    "build": "bun build --compile --minify --sourcemap --bytecode index.ts --target bun --outfile=dist/CopyPartySearcher"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -17,6 +21,7 @@
   },
   "dependencies": {
     "discord.js": "^14.25.1",
-    "fuse.js": "^7.1.0"
+    "fuse.js": "^7.1.0",
+    "meilisearch": "^0.55.0"
   }
 }

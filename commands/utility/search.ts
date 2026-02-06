@@ -3,7 +3,7 @@ import {
   SlashCommandBuilder,
   StringSelectMenuBuilder,
 } from "discord.js";
-import { fuse } from "../..";
+import { index } from "../..";
 
 export default {
   data: new SlashCommandBuilder()
@@ -19,9 +19,9 @@ export default {
   async execute(interaction: any) {
     const query = interaction.options.getString("query")!;
 
-    const matches = fuse?.search(query) ?? [];
+    const matches = await index.search(query) ?? [];
 
-    if (matches.length === 0) {
+    if (matches.hits.length === 0) {
       await interaction.reply({
         content: `No results found for: ${query}`,
         flags: "Ephemeral",
@@ -29,14 +29,14 @@ export default {
       return;
     }
 
-    const results = matches.slice(0, 25);
+    const results = matches.hits.slice(0, 25);
 
     const menu = new StringSelectMenuBuilder()
       .setCustomId("search_select")
       .setPlaceholder("Select a result")
       .addOptions(
         results.map((m, i) => ({
-          label: decodeURIComponent(m.item.href).slice(0, 100),
+          label: decodeURIComponent(m.href).slice(0, 100),
           value: JSON.stringify({ i, query }),
         })),
       );
@@ -46,7 +46,7 @@ export default {
     );
 
     await interaction.reply({
-      content: `Found ${matches.length} results. Showing top ${results.length}.`,
+      content: `Found ${matches.hits.length} results. Showing top ${results.length}.`,
       components: [row],
       flags: "Ephemeral",
     });

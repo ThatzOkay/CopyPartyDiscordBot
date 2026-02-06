@@ -8,6 +8,7 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  messageLink,
   StringSelectMenuInteraction,
   type CacheType,
 } from "discord.js";
@@ -15,11 +16,31 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import fs from "node:fs";
 import type { FileNode } from "./file-node";
-import { flatten, type FuseItem } from "./flatten";
+import { flatten, type MeiliFileDoc } from "./flatten";
 import Fuse from "fuse.js";
+import search from "./commands/utility/search";
+import { MeiliSearch } from "meilisearch";
 
-export const fileList: FuseItem[] = [];
-export let fuse: Fuse<FuseItem> | null = null;
+export const fileList: MeiliFileDoc[] = [];
+
+const BATCH_SIZE = 5000;
+
+export const meiliClient = new MeiliSearch({
+  host: process.env.MEILISEARCH_HOST!,
+  apiKey: process.env.MEILISEARCH_API_KEY!,
+});
+
+export const index = meiliClient.index("files");
+
+async function waitForTask(taskUid: number) {
+  let task;
+  do {
+    task = await meiliClient.tasks.getTask(taskUid);
+    if (task.status === "succeeded") return;
+    if (task.status === "failed") throw new Error(JSON.stringify(task));
+    await new Promise((r) => setTimeout(r, 100)); // 100ms delay
+  } while (true);
+}
 
 const createFileTree = async () => {
   const files: FileNode[] = [];
@@ -115,39 +136,18 @@ client.once(Events.ClientReady, (readyClient) => {
 });
 
 const commands = new Collection();
-
-const folderPath = path.join(__dirname, "commands");
-const commandFolders = await readdir(folderPath);
-
-for (const folder of commandFolders) {
-  const commandsPath = path.join(folderPath, folder);
-  const commandFiles = (await readdir(commandsPath)).filter(
-    (file) => file.endsWith(".ts") || file.endsWith(".js"),
-  );
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
-    const command = (await import(filePath)).default;
-
-    if ("data" in command && "execute" in command) {
-      commands.set(command.data.name, command);
-    } else {
-      console.log(
-        `[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`,
-      );
-    }
-  }
-}
+commands.set("search", search);
 
 const handleSelectInteraction = async (
   interaction: StringSelectMenuInteraction<CacheType>,
 ) => {
   await interaction.deferUpdate();
   const parsed = JSON.parse(interaction.values[0]!);
-  const index = Number(parsed.i);
+  const selectIndex = Number(parsed.i);
 
-  const matches = fuse?.search(parsed.query);
+  const matches = await index.search(parsed.query) ?? [];
 
-  if (!matches || index < 0 || index >= matches.length || !matches[index]) {
+  if (!matches || selectIndex < 0 || selectIndex >= matches.hits.length || !matches.hits[selectIndex]) {
     await interaction.update({
       content: "Invalid selection.",
       components: [],
@@ -155,7 +155,7 @@ const handleSelectInteraction = async (
     return;
   }
 
-  const item = matches[index].item;
+  const item = matches.hits.find((_, index) => index === selectIndex)?.item;
 
   const openUrl = item.fullHref;
   const downloadUrl = item.type === "dir" ? item.lead : item.fullHref + "?dl";
@@ -229,35 +229,31 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-const loadFilesArray = () => {
-  const jsonData = fs.readFileSync("file-tree.json", "utf-8");
-
-    const parsedData: FuseItem[] = JSON.parse(jsonData);
-    for (let i = 0; i < parsedData.length; i += 10_000) {
-      fileList.push(...parsedData.slice(i, i + 10_000));
-    }
-    fuse = new Fuse(fileList, {
-      keys: ["lead", "tags", "href", "fullHref"],
-      threshold: 0.3,
-    });
-    console.log(`File tree created with ${fileList.length} items.`);
-}
-
-const exists = fs.existsSync("file-tree.json");
-if (exists) {
-  loadFilesArray();
-} else {
+const exists = index.createdAt !== undefined && (await index.getStats()).numberOfDocuments > 0 && !process.env.FORCE_REINDEX;
+console.log(`Index exists: ${exists}`);
+if (!exists) {
 createFileTree()
-  .then((files) => {
-    const flattened = flatten(files);
+  .then(async (files) => {
 
-    fs.writeFileSync("file-tree.json", JSON.stringify(flattened));
+      const flattened = flatten(files);
 
-    loadFilesArray();
-    //Example working search:
-    // const testPattern = "Rosellia";
-    // const results = fuse.search(testPattern);
-    // console.log(`Search results for "${testPattern}":`, results.slice(0, 5));
+      console.log(
+        `Flattened file tree contains ${flattened.length} items.`
+      );
+      console.log("Adding documents to Meilisearch index...");
+
+      for (let i = 0; i < flattened.length; i += BATCH_SIZE) {
+        const batch = flattened.slice(i, i + BATCH_SIZE);
+
+        console.log(
+          `Uploading ${i} → ${i + batch.length} / ${flattened.length}`
+        );
+
+        const task = await index.addDocuments(batch);
+        await waitForTask(task.taskUid);
+      }
+
+      console.log("Indexing complete.");
   })
   .catch((err) => {
     console.error("Error creating file tree:", err);
