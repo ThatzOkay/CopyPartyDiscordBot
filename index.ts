@@ -148,14 +148,26 @@ const handleSelectInteraction = async (
   const matches = await index.search(parsed.query) ?? [];
 
   if (!matches || selectIndex < 0 || selectIndex >= matches.hits.length || !matches.hits[selectIndex]) {
-    await interaction.update({
+    await interaction.followUp({
       content: "Invalid selection.",
       components: [],
     });
     return;
   }
 
-  const item = matches.hits.find((_, index) => index === selectIndex)?.item;
+  console.log(`User selected index ${selectIndex} for query "${parsed.query}"`);
+
+  console.log("Search result count:", matches.hits.length);
+
+  const item = matches.hits.find((_, index) => index === selectIndex);
+
+  if (!item) {
+    await interaction.followUp({
+      content: "Selected item not found.",
+      components: [],
+    });
+    return;
+  }
 
   const openUrl = item.fullHref;
   const downloadUrl = item.type === "dir" ? item.lead : item.fullHref + "?dl";
