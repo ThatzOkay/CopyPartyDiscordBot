@@ -229,8 +229,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-const exists = index.createdAt !== undefined && (await index.getStats()).numberOfDocuments > 0 && !process.env.FORCE_REINDEX;
-console.log(`Index exists: ${exists}`);
+const rawInfo = await index.getRawInfo().catch(() => undefined);
+const stats = await index.getStats().catch(() => undefined);
+const exists = rawInfo?.createdAt !== undefined 
+               && stats?.numberOfDocuments !== undefined 
+               && stats.numberOfDocuments > 0 
+               && process.env.FORCE_REINDEX !== "true";
 if (!exists) {
 createFileTree()
   .then(async (files) => {
