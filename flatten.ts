@@ -36,7 +36,7 @@ export const flatten = (
 ): MeiliFileDoc[] => {
   const includeDirs = options?.includeDirs ?? true;
   const copyPartyUrl = (process.env.COPY_PARTY_URL ?? "").replace(/\/$/, ""); // no trailing slash
-  const copyPartyPrefix = copyPartyUrl ? `${copyPartyUrl}/music/` : "";
+  const copyPartyPrefix = copyPartyUrl ? `${copyPartyUrl}/` : "";
 
   const walk = (list: FileNode[], parentRelativeHref = ""): MeiliFileDoc[] => {
     return list.flatMap((node) => {

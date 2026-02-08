@@ -8,9 +8,9 @@ RUN bun install
 
 COPY . .
 
-RUN bun build ./index.ts --target node --outdir dist
+RUN bun run build
 
-FROM oven/bun:latest
+FROM debian:bookworm-slim
 
 WORKDIR /app
 

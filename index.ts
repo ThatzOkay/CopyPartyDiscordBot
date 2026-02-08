@@ -40,6 +40,11 @@ export const meiliClient = new MeiliSearch({
   apiKey: process.env.MEILISEARCH_API_KEY!,
 });
 
+if (meiliClient.getVersion().catch(() => undefined) === undefined) {  
+  console.error("Unable to connect to Meilisearch. Please ensure it is running and the MEILISEARCH_HOST and MEILISEARCH_API_KEY environment variables are correct.");
+  process.exit(1);
+}
+
 export const index = meiliClient.index("files");
 
 async function waitForTask(taskUid: number) {
@@ -311,52 +316,54 @@ discordClient.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
-const rawInfo = await index.getRawInfo().catch(() => undefined);
-const stats = await index.getStats().catch(() => undefined);
-const exists =
-  rawInfo?.createdAt !== undefined &&
-  stats?.numberOfDocuments !== undefined &&
-  stats.numberOfDocuments > 0 &&
-  process.env.FORCE_REINDEX !== "true";
-if (!exists) {
-  await index.deleteAllDocuments().catch(() => undefined);
+(async () => {
+  const rawInfo = await index.getRawInfo().catch(() => undefined);
+  const stats = await index.getStats().catch(() => undefined);
+  const exists =
+    rawInfo?.createdAt !== undefined &&
+    stats?.numberOfDocuments !== undefined &&
+    stats.numberOfDocuments > 0 &&
+    process.env.FORCE_REINDEX !== "true";
+  if (!exists) {
+    await index.deleteAllDocuments().catch(() => undefined);
 
-  createFileTree()
-    .then(async (files) => {
-      const flattened = flatten(files);
+    createFileTree()
+      .then(async (files) => {
+        const flattened = flatten(files);
 
-      console.log(`Flattened file tree contains ${flattened.length} items.`);
-      console.log("Adding documents to Meilisearch index...");
+        console.log(`Flattened file tree contains ${flattened.length} items.`);
+        console.log("Adding documents to Meilisearch index...");
 
-      for (let i = 0; i < flattened.length; i += BATCH_SIZE) {
-        const batch = flattened.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < flattened.length; i += BATCH_SIZE) {
+          const batch = flattened.slice(i, i + BATCH_SIZE);
 
-        console.log(
-          `Uploading ${i} → ${i + batch.length} / ${flattened.length}`,
-        );
+          console.log(
+            `Uploading ${i} → ${i + batch.length} / ${flattened.length}`,
+          );
 
-        const task = await index.addDocuments(batch);
-        await waitForTask(task.taskUid);
-      }
+          const task = await index.addDocuments(batch);
+          await waitForTask(task.taskUid);
+        }
 
-      await index.updateSearchableAttributes([
-        "lead",
-        "href",
-        "fullHref",
-        "ext",
-        "sz",
-        "ts",
-        "tags",
-        "params",
-        "type",
-        "path",
-      ]);
+        await index.updateSearchableAttributes([
+          "lead",
+          "href",
+          "fullHref",
+          "ext",
+          "sz",
+          "ts",
+          "tags",
+          "params",
+          "type",
+          "path",
+        ]);
 
-      console.log("Indexing complete.");
-    })
-    .catch((err) => {
-      console.error("Error creating file tree:", err);
-    });
-}
+        console.log("Indexing complete.");
+      })
+      .catch((err) => {
+        console.error("Error creating file tree:", err);
+      });
+  }
 
-discordClient.login(token);
+  discordClient.login(token);
+})();
