@@ -17,6 +17,7 @@ import type { FileNode } from "./file-node";
 import { flatten, type MeiliFileDoc } from "./flatten";
 import search from "./commands/utility/search";
 import { MeiliSearch } from "meilisearch";
+import pLimit from "p-limit";
 
 console.log("Starting up...");
 
@@ -124,8 +125,11 @@ const fetchRecursive = async (
     node.children = children;
 
     const dirChilds = children.filter((child) => child.type === "dir");
+
+    const limit = pLimit(process.env.FETCH_CONCURRENCY ? parseInt(process.env.FETCH_CONCURRENCY) : 10);
+
     const dirChildTasks = dirChilds.map((child) =>
-      fetchRecursive(child, `${nextPath}`),
+      limit(() => fetchRecursive(child, `${nextPath}`)),
     );
     await Promise.all(dirChildTasks);
   } catch (err) {

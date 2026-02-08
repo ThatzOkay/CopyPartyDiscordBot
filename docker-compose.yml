@@ -10,6 +10,7 @@ services:
       - MEILISEARCH_HOST=${MEILISEARCH_HOST}
       - MEILISEARCH_API_KEY=${MEILISEARCH_API_KEY}
       - FORCE_REINDEX=${FORCE_REINDEX}
+      - FETCH_CONCURRENCY=${FETCH_CONCURRENCY}
   meilisearch:
     image: getmeili/meilisearch:v1.35.0
     ports:
