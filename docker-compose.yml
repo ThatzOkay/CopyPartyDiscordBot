@@ -3,6 +3,7 @@ services:
     image: thatzokay/copy-party-search:latest
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - CLIENT_ID=${CLIENT_ID}
       - GUILD_ID=${GUILD_ID}
       - COPY_PARTY_URL=${COPY_PARTY_URL}
       - COPY_PARTY_PASSWORD=${COPY_PARTY_PASSWORD}
